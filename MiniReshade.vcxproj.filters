@@ -1,0 +1,54 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="src">
+      <UniqueIdentifier>{85344f05-1240-483f-8e7b-e61b2c8738ac}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="resources">
+      <UniqueIdentifier>{ccc87904-0623-4204-81a4-81300c13cb27}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="resources\7z">
+      <UniqueIdentifier>{377fc400-c490-4117-b33e-c9403cf4aead}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="resources\reshade">
+      <UniqueIdentifier>{cdee4cf4-6b7f-46f4-91e9-5220ccc906f0}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="快捷修改ID.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="resource.h">
+      <Filter>src</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="install.rc">
+      <Filter>src</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="7z\7za.dll">
+      <Filter>resources\7z</Filter>
+    </None>
+    <None Include="7z\7za.exe">
+      <Filter>resources\7z</Filter>
+    </None>
+    <None Include="7z\7zxa.dll">
+      <Filter>resources\7z</Filter>
+    </None>
+    <None Include="reshade\MiNi-reshade.7z">
+      <Filter>resources\reshade</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="icon.ico">
+      <Filter>resources</Filter>
+    </Image>
+  </ItemGroup>
+</Project>

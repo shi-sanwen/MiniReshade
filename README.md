@@ -1,4 +1,4 @@
-# 迷你世界reshade安装工具（MiniReshade）
+# MiniWorld_Reshade
 
 ![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows-green.svg)
@@ -30,14 +30,15 @@
 ### 下载安装器
 
 1. 访问项目的 [Releases](https://github.com/shisanwen-gmail/MiniWorld_Reshade/releases) 页面
-2. 下载最新版本的安装器（.exe 文件）
+2. 下载最新版本的安装器（.zip 文件）
 
 ### 运行程序
 
-1. 右键点击下载的 `.exe` 文件
-2. 运行`.exe`文件
-3. 选择"以管理员身份运行"
-4. 如果出现用户账户控制(UAC)提示，请点击"是"
+1. 右键点击下载的 `.zip` 文件
+2. 解压`.zip`文件
+3. 运行`.exe`文件
+4. 选择"以管理员身份运行"
+5. 如果出现用户账户控制(UAC)提示，请点击"是"
 
 ## 使用教程
 
@@ -132,28 +133,16 @@
 
 ## 开发者信息
 
+**版权声明**：
+
+本作品（包括但不限于文字、图片、音频、视频、设计元素等）的版权归作者"创梦星际"共所有。未经作者及工作室明确书面授权，任何个人、组织或机构不得以任何形式复制、分发、传播、展示、修改、改编或以其他任何方式使用本作品的全部或部分内容。
+
 **联系方式**：
 - 个人博客：创梦星际
 - 地址：https://www.scmgzs.top/ 或https://cmxj.top 
 - 联系邮箱：2196634956@qq.com
 
-## 📄 版权与许可
-
-本作品采用 [Apache License 2.0](http://www.apache.org/licenses/LICENSE-2.0) 开源协议。
-
-版权所有 © 2025 创梦星际
-
-在遵守 Apache 2.0 协议的前提下，您可以自由地使用、复制、修改和分发本作品。  
-有关许可的详细信息，请访问 [Apache License 2.0 全文](http://www.apache.org/licenses/LICENSE-2.0)。
-
-
 ## 更新日志
-
-### 版本2.7.54（2025年8月）
-- **修复**:
- -修复迷你世界1.48.1.0渲染失败问题
-- **优化**:
- -将资源文件打包在主程序中，不需要额外解压 
 
 ### 版本 2.7.50（2025年6月）
 - 修复迷你世界1.46.1.0更新后渲染效果失效问题

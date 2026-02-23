@@ -1,4 +1,4 @@
-#include <windows.h>
+﻿#include <windows.h>
 #include <commctrl.h>
 #include <shlobj.h>
 #include <shlwapi.h>
@@ -17,6 +17,7 @@
 #include <gdiplus.h>
 #include <dwmapi.h>
 #include <versionhelpers.h>
+#include <winhttp.h>
 #include "resource.h"
 
 #pragma comment(lib, "comctl32.lib")
@@ -26,6 +27,7 @@
 #pragma comment(lib, "gdiplus.lib")
 #pragma comment(lib, "msimg32.lib")
 #pragma comment(lib, "dwmapi.lib")
+#pragma comment(lib, "winhttp.lib")  // 添加WinHTTP库
 
 // 资源 ID
 #define IDC_OUTPUT_TEXT 101
@@ -45,6 +47,7 @@
 // 自定义消息
 #define WM_UPDATE_PROGRESS (WM_USER + 1)
 #define WM_LOG_MESSAGE (WM_USER + 2)
+#define WM_UPDATE_LOG_LOADED (WM_USER + 3)  // 新增：更新日志加载完成消息
 
 // 现代化颜色方案
 #define COLOR_BG RGB(255, 255, 255)                // 背景色
@@ -66,8 +69,7 @@
 #define COLOR_ERROR RGB(239, 68, 68)               // 错误颜色
 #define COLOR_INFO RGB(59, 130, 246)               // 信息颜色
 
-
-// <CHANGE> 添加资源管理类
+// 添加资源管理类
 class EmbeddedResourceManager {
 private:
     static std::wstring tempDir;
@@ -133,7 +135,6 @@ private:
 
 std::wstring EmbeddedResourceManager::tempDir;
 
-
 // 添加文字动画相关结构和变量
 struct AnimatedText {
     std::wstring text;
@@ -150,6 +151,7 @@ HWND g_hOutputText = NULL;
 HWND g_hProgressBar = NULL;
 HWND g_hVersionGroup = NULL;
 HWND g_hStatusBar = NULL;
+HWND g_hUpdateText = NULL;  // 更新日志文本框句柄
 std::map<std::wstring, std::wstring> g_detectedVersions;
 bool g_scanning = false;
 bool g_scanPaused = false;
@@ -250,7 +252,16 @@ LRESULT CALLBACK CustomGroupBoxProc(HWND hWnd, UINT message, WPARAM wParam, LPAR
 LRESULT CALLBACK CustomProgressProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData); // 自定义进度条窗口过程
 LRESULT CALLBACK CustomCheckboxProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData);  // 自定义复选框窗口过程
 
-// 添加新函数声明
+// 新增函数声明 - 用于创建桌面快捷方式
+bool CreateDesktopShortcut(const std::wstring& targetPath, const std::wstring& gameName);
+
+// API相关函数声明
+std::wstring GetUpdateLogFromAPI();
+DWORD WINAPI FetchUpdateLogThread(LPVOID lpParameter);
+void UpdateLogTextBox(const std::wstring& content);
+std::wstring UTF8ToWide(const std::string& utf8);
+std::string WideToUTF8(const std::wstring& wide);
+std::wstring ParseUpdateLogJSON(const std::string& jsonStr);
 
 // 动画和视觉效果相关函数
 COLORREF BlendColors(COLORREF color1, COLORREF color2, float factor);        // 混合两种颜色
@@ -270,124 +281,6 @@ void AddCustomWindowControls(HWND hWnd);                                     // 
 LRESULT CALLBACK CustomCloseButtonProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData);  // 自定义关闭按钮窗口过程
 LRESULT CALLBACK CustomMinimizeButtonProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData); // 自定义最小化按钮窗口过程
 void EnableBlurBehind(HWND hWnd);                                            // 启用窗口模糊效果
-
-
-
-//【K24T3Q4T3W】注册表相关代码 {
-
-// 新增函数声明 - 用于修改和运行注册表文件
-bool ModifyRegistryFile(const std::wstring& installPath);
-bool RunRegistryFile(const std::wstring& regFilePath);
-
-// 修改注册表文件 - 创建或修改注册表文件，将游戏路径写入其中
-bool ModifyRegistryFile(const std::wstring& installPath) {
-    // 构建注册表文件路径
-    std::wstring regFilePath = installPath + L"\\1.reg";
-
-    LogOutput(L"开始修改注册表文件: " + regFilePath);
-
-    // 1. 检查安装目录是否存在
-    if (!PathFileExists(installPath.c_str())) {
-        LogOutput(L"安装目录不存在: " + installPath);
-        return false;
-    }
-
-    // 2. 构建游戏主程序路径
-    std::wstring gameExePath = installPath + L"\\2.exe";
-    LogOutput(L"游戏主程序路径: " + gameExePath);
-
-    // 3. 转义路径中的反斜杠字符
-    std::wstring escapedPath;
-    for (wchar_t c : gameExePath) {
-        escapedPath += c;
-        if (c == L'\\') escapedPath += L"\\"; // 添加额外的反斜杠进行转义
-    }
-
-    // 4. 构建注册表文件内容
-    std::wstring regContent =
-        L"Windows Registry Editor Version 5.00\r\n"
-        L"\r\n"
-        L"[HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\minigameapp.exe]\r\n"
-        L"\"Debugger\"=\"" + escapedPath + L"\"\r\n";
-
-    // 5. 创建文件句柄用于写入
-    HANDLE hFile = CreateFile(regFilePath.c_str(), GENERIC_WRITE, 0, NULL,
-        CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (hFile == INVALID_HANDLE_VALUE) {
-        LogOutput(L"创建文件失败: " + std::to_wstring(GetLastError()));
-        return false;
-    }
-
-    // 6. 写入UTF-16 BOM (0xFEFF)以标识Unicode编码
-    const WCHAR BOM = 0xFEFF;
-    DWORD bytesWritten;
-    WriteFile(hFile, &BOM, sizeof(BOM), &bytesWritten, NULL);
-
-    // 7. 写入注册表内容到文件
-    WriteFile(hFile, regContent.c_str(),
-        regContent.size() * sizeof(WCHAR), &bytesWritten, NULL);
-
-    CloseHandle(hFile);
-
-    LogOutput(L"注册表文件修改完成");
-    return true;
-}
-
-// 运行注册表文件 - 通过regedit.exe导入注册表文件到系统注册表
-bool RunRegistryFile(const std::wstring& regFilePath) {
-    LogOutput(L"开始运行注册表文件: " + regFilePath);
-
-    // 检查注册表文件是否存在
-    if (!PathFileExists(regFilePath.c_str())) {
-        LogOutput(L"注册表文件不存在: " + regFilePath);
-        return false;
-    }
-
-    // 构建命令行参数，使用regedit.exe静默导入注册表文件
-    std::wstring command = L"regedit.exe /s \"" + regFilePath + L"\"";
-
-    STARTUPINFO si;
-    PROCESS_INFORMATION pi;
-    ZeroMemory(&si, sizeof(si));
-    si.cb = sizeof(si);
-    si.dwFlags = STARTF_USESHOWWINDOW;
-    si.wShowWindow = SW_HIDE; // 隐藏窗口运行
-    ZeroMemory(&pi, sizeof(pi));
-
-    // 创建进程运行regedit
-    if (CreateProcess(NULL, (LPWSTR)command.c_str(), NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
-        // 等待进程完成执行
-        WaitForSingleObject(pi.hProcess, INFINITE);
-
-        // 获取进程退出码以判断执行是否成功
-        DWORD exitCode;
-        GetExitCodeProcess(pi.hProcess, &exitCode);
-
-        // 关闭进程和线程句柄
-        CloseHandle(pi.hProcess);
-        CloseHandle(pi.hThread);
-
-        if (exitCode == 0) {
-            LogOutput(L"注册表文件运行成功");
-            return true;
-        }
-        else {
-            LogOutput(L"注册表文件运行失败，退出码: " + std::to_wstring(exitCode));
-            return false;
-        }
-    }
-    else {
-        LogOutput(L"创建regedit进程失败: " + std::to_wstring(GetLastError()));
-        return false;
-    }
-}
-
-// 【K24T3Q4T3W】注册表相关代码 结束 }
-
-
-
-
-
 
 // 辅助函数：绘制圆角矩形路径 - 创建一个带圆角的矩形路径，用于GDI+绘图
 void DrawRoundedRectPath(Gdiplus::GraphicsPath& path, float x, float y, float width, float height, float radius) {
@@ -411,6 +304,290 @@ void DrawRoundedRectPath(Gdiplus::GraphicsPath& path, float x, float y, float wi
     path.AddLine(x, y + height - radius, x, y + radius);
 
     path.CloseFigure(); // 闭合路径
+}
+
+// UTF-8 转 Wide
+std::wstring UTF8ToWide(const std::string& utf8) {
+    if (utf8.empty()) return L"";
+
+    int wideLen = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, NULL, 0);
+    if (wideLen == 0) return L"";
+
+    std::wstring wideStr(wideLen, 0);
+    MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), -1, &wideStr[0], wideLen);
+
+    // 去除末尾的null字符
+    if (!wideStr.empty() && wideStr[wideStr.length() - 1] == L'\0') {
+        wideStr.resize(wideStr.length() - 1);
+    }
+
+    return wideStr;
+}
+
+// Wide 转 UTF-8
+std::string WideToUTF8(const std::wstring& wide) {
+    if (wide.empty()) return "";
+
+    int utf8Len = WideCharToMultiByte(CP_UTF8, 0, wide.c_str(), -1, NULL, 0, NULL, NULL);
+    if (utf8Len == 0) return "";
+
+    std::string utf8Str(utf8Len, 0);
+    WideCharToMultiByte(CP_UTF8, 0, wide.c_str(), -1, &utf8Str[0], utf8Len, NULL, NULL);
+
+    // 去除末尾的null字符
+    if (!utf8Str.empty() && utf8Str[utf8Str.length() - 1] == '\0') {
+        utf8Str.resize(utf8Str.length() - 1);
+    }
+
+    return utf8Str;
+}
+
+// 解析更新日志JSON
+std::wstring ParseUpdateLogJSON(const std::string& jsonStr) {
+    std::wstring result = L"";
+
+    try {
+        // 简单JSON解析 - 查找latest_version
+        size_t versionPos = jsonStr.find("\"latest_version\"");
+        if (versionPos != std::string::npos) {
+            versionPos = jsonStr.find("\"", versionPos + 1);
+            versionPos = jsonStr.find("\"", versionPos + 1);
+            size_t versionEnd = jsonStr.find("\"", versionPos + 1);
+            if (versionEnd != std::string::npos) {
+                std::string latestVersion = jsonStr.substr(versionPos + 1, versionEnd - versionPos - 1);
+                result += L"最新版本: " + UTF8ToWide(latestVersion) + L"\r\n\r\n";
+            }
+        }
+
+        // 查找changelog数组
+        size_t changelogPos = jsonStr.find("\"changelog\"");
+        if (changelogPos != std::string::npos) {
+            changelogPos = jsonStr.find("[", changelogPos);
+            if (changelogPos != std::string::npos) {
+                std::string changelogArray = jsonStr.substr(changelogPos);
+
+                // 解析每个版本
+                size_t itemStart = 0;
+                while ((itemStart = changelogArray.find("{", itemStart)) != std::string::npos) {
+                    size_t itemEnd = changelogArray.find("}", itemStart);
+                    if (itemEnd == std::string::npos) break;
+
+                    std::string item = changelogArray.substr(itemStart, itemEnd - itemStart + 1);
+
+                    // 提取版本号
+                    std::string version;
+                    size_t vPos = item.find("\"version\"");
+                    if (vPos != std::string::npos) {
+                        vPos = item.find("\"", vPos + 1);
+                        vPos = item.find("\"", vPos + 1);
+                        size_t vEnd = item.find("\"", vPos + 1);
+                        if (vEnd != std::string::npos) {
+                            version = item.substr(vPos + 1, vEnd - vPos - 1);
+                        }
+                    }
+
+                    // 提取日期
+                    std::string date;
+                    size_t dPos = item.find("\"date\"");
+                    if (dPos != std::string::npos) {
+                        dPos = item.find("\"", dPos + 1);
+                        dPos = item.find("\"", dPos + 1);
+                        size_t dEnd = item.find("\"", dPos + 1);
+                        if (dEnd != std::string::npos) {
+                            date = item.substr(dPos + 1, dEnd - dPos - 1);
+                        }
+                    }
+
+                    // 提取变更内容
+                    std::vector<std::string> changes;
+                    size_t cPos = item.find("\"changes\"");
+                    if (cPos != std::string::npos) {
+                        cPos = item.find("[", cPos);
+                        if (cPos != std::string::npos) {
+                            size_t cEnd = item.find("]", cPos);
+                            if (cEnd != std::string::npos) {
+                                std::string changesStr = item.substr(cPos + 1, cEnd - cPos - 1);
+
+                                // 解析每个change项
+                                size_t changeStart = 0;
+                                while ((changeStart = changesStr.find("\"", changeStart)) != std::string::npos) {
+                                    size_t changeEnd = changesStr.find("\"", changeStart + 1);
+                                    if (changeEnd == std::string::npos) break;
+
+                                    std::string change = changesStr.substr(changeStart + 1, changeEnd - changeStart - 1);
+
+                                    // 处理转义的换行符
+                                    size_t newlinePos = 0;
+                                    while ((newlinePos = change.find("\\n", newlinePos)) != std::string::npos) {
+                                        change.replace(newlinePos, 2, "\r\n");
+                                        newlinePos += 2; // 跳过已替换的部分
+                                    }
+
+                                    // 处理转义的双引号
+                                    size_t quotePos = 0;
+                                    while ((quotePos = change.find("\\\"", quotePos)) != std::string::npos) {
+                                        change.replace(quotePos, 2, "\"");
+                                        quotePos += 1; // 跳过已替换的部分
+                                    }
+
+                                    changes.push_back(change);
+
+                                    changeStart = changeEnd + 1;
+                                }
+                            }
+                        }
+                    }
+
+                    // 添加到结果
+                    if (!version.empty() && !changes.empty()) {
+                        result += L"* 版本 " + UTF8ToWide(version);
+                        if (!date.empty()) {
+                            result += L" (" + UTF8ToWide(date) + L")";
+                        }
+                        result += L"\r\n";
+
+                        for (const auto& change : changes) {
+                            result += L"- " + UTF8ToWide(change) + L"\r\n";
+                        }
+                        result += L"\r\n";
+                    }
+
+                    itemStart = itemEnd + 1;
+                }
+            }
+        }
+
+        if (result == L"## 更新日志\r\n\r\n**最新版本: null **\r\n\r\n") {
+            // 如果没有解析到数据，返回默认内容
+            return L"更新日志格式错误，请联系2196634956@qq.com";
+        }
+
+    }
+    catch (...) {
+        // 解析失败时返回默认内容
+        return L"更新日志连接失败，请联系2196634956@qq.com";
+    }
+
+    return result;
+}
+
+// 从API获取更新日志
+std::wstring GetUpdateLogFromAPI() {
+    HINTERNET hSession = NULL;
+    HINTERNET hConnect = NULL;
+    HINTERNET hRequest = NULL;
+    std::string response;
+
+    try {
+        // 初始化WinHTTP
+        hSession = WinHttpOpen(L"MiniWorld Reshade Installer/1.0",
+            WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+            WINHTTP_NO_PROXY_NAME,
+            WINHTTP_NO_PROXY_BYPASS, 0);
+        if (!hSession) {
+            throw std::runtime_error("WinHttpOpen failed");
+        }
+
+        // 设置超时
+        DWORD timeout = 8000; // 8秒
+        WinHttpSetTimeouts(hSession, timeout, timeout, timeout, timeout);
+
+        // 建立连接
+        hConnect = WinHttpConnect(hSession, L"api.cmxj.top",
+            INTERNET_DEFAULT_HTTPS_PORT, 0);
+        if (!hConnect) {
+            throw std::runtime_error("WinHttpConnect failed");
+        }
+
+        // 创建请求
+        hRequest = WinHttpOpenRequest(hConnect, L"GET", L"/MiniWorld/reshade/update_text.json",
+            NULL, WINHTTP_NO_REFERER,
+            WINHTTP_DEFAULT_ACCEPT_TYPES,
+            WINHTTP_FLAG_SECURE);
+        if (!hRequest) {
+            throw std::runtime_error("WinHttpOpenRequest failed");
+        }
+
+        // 发送请求
+        if (!WinHttpSendRequest(hRequest,
+            WINHTTP_NO_ADDITIONAL_HEADERS, 0,
+            WINHTTP_NO_REQUEST_DATA, 0,
+            0, 0)) {
+            throw std::runtime_error("WinHttpSendRequest failed");
+        }
+
+        // 接收响应
+        if (!WinHttpReceiveResponse(hRequest, NULL)) {
+            throw std::runtime_error("WinHttpReceiveResponse failed");
+        }
+
+        // 读取响应数据
+        DWORD dwSize = 0;
+        DWORD dwDownloaded = 0;
+        do {
+            // 检查数据可用大小
+            if (!WinHttpQueryDataAvailable(hRequest, &dwSize)) {
+                throw std::runtime_error("WinHttpQueryDataAvailable failed");
+            }
+
+            if (dwSize == 0) break;
+
+            // 分配缓冲区
+            std::vector<char> buffer(dwSize + 1);
+
+            // 读取数据
+            if (!WinHttpReadData(hRequest, buffer.data(), dwSize, &dwDownloaded)) {
+                throw std::runtime_error("WinHttpReadData failed");
+            }
+
+            // 添加到响应字符串
+            response.append(buffer.data(), dwDownloaded);
+
+        } while (dwSize > 0);
+
+        // 解析JSON响应
+        if (!response.empty()) {
+            return ParseUpdateLogJSON(response);
+        }
+
+    }
+    catch (const std::exception& e) {
+        LogOutput(L"获取更新日志失败: " + UTF8ToWide(e.what()));
+    }
+
+    // 清理资源
+    if (hRequest) WinHttpCloseHandle(hRequest);
+    if (hConnect) WinHttpCloseHandle(hConnect);
+    if (hSession) WinHttpCloseHandle(hSession);
+
+    // 返回空字符串表示失败
+    return L"";
+}
+
+// 获取更新日志的线程函数
+DWORD WINAPI FetchUpdateLogThread(LPVOID lpParameter) {
+    std::wstring updateLog = GetUpdateLogFromAPI();
+
+    // 如果获取失败，使用默认内容
+    if (updateLog.empty()) {
+        updateLog = L"公告拉取失败，请联系2196634956@qq.com";
+    }
+
+    // 发送消息更新UI
+    if (g_hUpdateText) {
+        SendMessage(g_hUpdateText, WM_SETTEXT, 0, (LPARAM)updateLog.c_str());
+    }
+
+    LogOutput(L"更新日志加载完成");
+
+    return 0;
+}
+
+// 更新日志文本框
+void UpdateLogTextBox(const std::wstring& content) {
+    if (g_hUpdateText) {
+        SendMessage(g_hUpdateText, WM_SETTEXT, 0, (LPARAM)content.c_str());
+    }
 }
 
 // 文字动画函数实现 - 为指定窗口中的文字添加逐字显现的动画效果
@@ -1064,7 +1241,7 @@ LRESULT CALLBACK CustomButtonProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM
     return DefSubclassProc(hWnd, message, wParam, lParam);
 }
 
-// 自定义复选   窗口过程
+// 自定义复选框窗口过程
 LRESULT CALLBACK CustomCheckboxProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData) {
     static bool hover = false;
 
@@ -1388,7 +1565,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         CheckAllVersions();
 
         // 为标题添加动画效果 - 使程序标题具有动态显现的视觉效果
-        AnimateText(hWnd, L"迷你世界光影包安装器 V2.7.54");
+        AnimateText(hWnd, L"迷你世界光影包安装器 V2.7.54.0");
 
         // 启用DWM扩展窗口框架 - 实现现代化的窗口边框和视觉效果
         MARGINS margins = { 0, 0, 0, 0 };
@@ -1442,6 +1619,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
             std::wstring* pMessage = reinterpret_cast<std::wstring*>(lParam);
             LogOutput(*pMessage);
             delete pMessage;
+        }
+        break;
+
+    case WM_UPDATE_LOG_LOADED:  // 新增：更新日志加载完成消息
+        if (g_hUpdateText && lParam) {
+            std::wstring* pContent = reinterpret_cast<std::wstring*>(lParam);
+            SendMessage(g_hUpdateText, WM_SETTEXT, 0, (LPARAM)pContent->c_str());
+            delete pContent;
         }
         break;
 
@@ -1704,7 +1889,7 @@ void SetupUI(HWND hWnd) {
     HWND hCopyrightText = CreateWindowEx(
         WS_EX_CLIENTEDGE,
         L"EDIT",
-        L"本作品采用 [Apache License 2.0](http://www.apache.org/licenses/LICENSE-2.0) 开源协议。\r\n\r\n 版权所有 © 2025 创梦星际\r\n\r\n在遵守 Apache 2.0 协议的前提下，您可以自由地使用、复制、修改和分发本作品。\r\n有关许可的详细信息，请访问[Apache License 2.0 全文](http://www.apache.org/licenses/LICENSE-2.0)。\r\n \r\n联系方式：\r\n工作室名称：创梦星际\r\n地址：https://www.scmgzs.top/\r\n联系邮箱：ssw2196634956@outlook.com",
+        L"本作品采用 [Apache License 2.0](http://www.apache.org/licenses/LICENSE-2.0) 开源协议。\r\n\r\n 版权所有 © 2025 创梦星际\r\n\r\n在遵守 Apache 2.0 协议的前提下，您可以自由地使用、复制、修改和分发本作品。\r\n有关许可的详细信息，请访问[Apache License 2.0 全文](http://www.apache.org/licenses/LICENSE-2.0)。\r\n \r\n联系方式：\r\n工作室名称：创梦星际\r\n地址：https://www.cmxj.top/\r\n联系邮箱：2196634956@qq.com",
         WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_READONLY,
         20, 95,
         380, 100,
@@ -1730,11 +1915,11 @@ void SetupUI(HWND hWnd) {
     );
     SendMessage(hUpdateLabel, WM_SETFONT, (WPARAM)g_hFontBold, TRUE);
 
-    // 创建更新日志文本框
-    HWND hUpdateText = CreateWindowEx(
+    // 创建更新日志文本框 - 初始显示加载中
+    g_hUpdateText = CreateWindowEx(
         WS_EX_CLIENTEDGE,
         L"EDIT",
-        L"## 更新日志\r\n \r\n ### 版本2.7.54（2025年8月）\r\n- **修复**:\r\n -修复迷你世界1.48.1.0渲染失败问题\r\n- **优化**:\r\n -将资源文件打包在主程序中，不需要额外解压 \r\n \r\n### 版本 2.7.50（2025年6月）\r\n- **修复**:\r\n -修复迷你世界1.46.1.0更新后渲染效果失效问题 \r\n- **优化**:\r\n -美化安装器UI \r\n  \r\n### 版本 2.7.42 (2025年5月) \r\n- **修复**:\r\n -修复迷你世界1.46.0.0更新后渲染效果失效问题 \r\n -使用C++重构代码 \r\n \r\n### 版本 2.6.32（2025年4月）\r\n- **修复**:\r\n -修复迷你世界1.45.90更新后渲染效果失效问题 \r\n \r\n### 版本 2.6.31（2025年1月）\r\n- **优化**:\r\n - 优化代码架构，更好的兼容win7系统运行。\r\n - 优化UI界面，使用pyqt5开发。\r\n- **修复**：\r\n - 修复过ACE，使用天梦零惜大佬制作。\r\n - 修复扫盘寻找问题。\r\n### 版本 2.6.24 (2023年10月)\r\n- **新增功能**:\r\n - 添加了对新游戏版本的支持。\r\n  - 增加了用户反馈功能，用户可以直接在应用内提交反馈。\r\n \r\n- **优化**:\r\n  - 优化了安装过程中的文件解压速度。\r\n  - 改进了UI界面，使其更加友好和直观。\r\n \r\n- **修复**:\r\n  - 修复了在某些情况下快捷方式创建失败的问题。\r\n  - 修复了安装过程中可能出现的崩溃问题。",
+        L"正在加载更新日志...",
         WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_READONLY,
         20, 230,
         380, 100,
@@ -1743,7 +1928,10 @@ void SetupUI(HWND hWnd) {
         GetModuleHandle(NULL),
         NULL
     );
-    SendMessage(hUpdateText, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
+    SendMessage(g_hUpdateText, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
+
+    // 启动线程获取更新日志
+    CreateThread(NULL, 0, FetchUpdateLogThread, g_hUpdateText, 0, NULL);
 
     // 创建检测到的游戏版本标签
     HWND hVersionLabel = CreateWindowEx(
@@ -2573,7 +2761,71 @@ bool ExtractZipWith7z(const std::wstring& zipPath, const std::wstring& extractPa
     return false;
 }
 
-// 安装操作 - 修改版本，添加注册表文件处理
+// 创建桌面快捷方式
+bool CreateDesktopShortcut(const std::wstring& targetPath, const std::wstring& gameName) {
+    // 1. 检查目标文件是否存在
+    std::wstring exePath = targetPath + L"\\MiniLauncher.exe";
+    if (!PathFileExists(exePath.c_str())) {
+        LogOutput(L"未找到 MiniLauncher.exe，无法创建快捷方式。路径: " + exePath);
+        return false;
+    }
+
+    // 2. 动态获取当前用户的桌面路径
+    wchar_t desktopPath[MAX_PATH];
+    if (FAILED(SHGetFolderPathW(NULL, CSIDL_DESKTOPDIRECTORY, NULL, 0, desktopPath))) {
+        LogOutput(L"获取桌面路径失败。");
+        return false;
+    }
+
+    // 3. 构建快捷方式的完整路径
+    std::wstring linkPath = std::wstring(desktopPath) + L"\\" + gameName + L".lnk";
+    LogOutput(L"正在创建桌面快捷方式: " + linkPath);
+
+    // 4. 使用 COM 创建快捷方式
+    HRESULT hr = CoInitialize(NULL);
+    if (SUCCEEDED(hr)) {
+        IShellLink* pShellLink = NULL;
+        hr = CoCreateInstance(CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER, IID_IShellLink, (LPVOID*)&pShellLink);
+        if (SUCCEEDED(hr)) {
+            // 设置快捷方式的目标路径、工作目录和描述
+            pShellLink->SetPath(exePath.c_str());
+            pShellLink->SetWorkingDirectory(targetPath.c_str());
+            pShellLink->SetDescription((L"启动 " + gameName).c_str());
+
+            // 保存快捷方式文件
+            IPersistFile* pPersistFile = NULL;
+            hr = pShellLink->QueryInterface(IID_IPersistFile, (LPVOID*)&pPersistFile);
+            if (SUCCEEDED(hr)) {
+                hr = pPersistFile->Save(linkPath.c_str(), TRUE);
+                pPersistFile->Release();
+                if (SUCCEEDED(hr)) {
+                    LogOutput(L"桌面快捷方式创建成功: " + linkPath);
+                    pShellLink->Release();
+                    CoUninitialize();
+                    return true;
+                }
+                else {
+                    LogOutput(L"保存快捷方式文件失败。");
+                }
+            }
+            else {
+                LogOutput(L"获取 IPersistFile 接口失败。");
+            }
+            pShellLink->Release();
+        }
+        else {
+            LogOutput(L"创建 IShellLink 对象失败。");
+        }
+        CoUninitialize();
+    }
+    else {
+        LogOutput(L"COM 库初始化失败。");
+    }
+    LogOutput(L"桌面快捷方式创建失败。");
+    return false;
+}
+
+// 安装操作
 void InstallAction() {
     // 获取选中的版本
     std::wstring selectedVersion;
@@ -2691,9 +2943,7 @@ bool TerminateProcessByPath(const std::wstring& processPath) {
     return terminated;
 }
 
-
-
-// 开始安装 - 执行光影包的安装过程，包括解压文件和处理注册表
+// 开始安装 - 执行光影包的安装过程
 void StartInstallation(const std::wstring& installPath) {
     // 构建光影包ZIP文件路径
     std::wstring zipPath = EmbeddedResourceManager::ExtractShaderPack();
@@ -2708,67 +2958,37 @@ void StartInstallation(const std::wstring& installPath) {
     std::wstring* pMessage = new std::wstring(L"开始安装...");
     PostMessage(g_hWnd, WM_LOG_MESSAGE, 0, (LPARAM)pMessage);
 
-    // 解压光影包文件
-    bool success = ExtractZipWith7z(zipPath, installPath);
-
-    if (success) {
-        pMessage = new std::wstring(L"文件解压完成，开始处理注册表文件...");
-        PostMessage(g_hWnd, WM_LOG_MESSAGE, 0, (LPARAM)pMessage);
-
-        // 修改注册表文件（将游戏路径写入注册表文件）
-        if (ModifyRegistryFile(installPath)) {
-            pMessage = new std::wstring(L"注册表文件修改完成，开始运行注册表文件...");
-            PostMessage(g_hWnd, WM_LOG_MESSAGE, 0, (LPARAM)pMessage);
-
-            // 运行注册表文件（导入到系统注册表）
-            std::wstring regFilePath = installPath + L"\\1.reg";
-            if (RunRegistryFile(regFilePath)) {
-                pMessage = new std::wstring(L"安装完成！注册表已成功导入。");
-                PostMessage(g_hWnd, WM_LOG_MESSAGE, 0, (LPARAM)pMessage);
-                MessageBox(g_hWnd, L"安装完成！注册表已成功导入。", L"完成", MB_ICONINFORMATION);
-            }
-            else {
-                pMessage = new std::wstring(L"注册表文件运行失败，但文件安装成功。");
-                PostMessage(g_hWnd, WM_LOG_MESSAGE, 0, (LPARAM)pMessage);
-                MessageBox(g_hWnd, L"文件安装成功，但注册表导入失败。请手动运行安装目录下的1.reg文件。", L"部分完成", MB_ICONWARNING);
-            }
-        }
-        else {
-            pMessage = new std::wstring(L"注册表文件修改失败，但文件安装成功。");
-            PostMessage(g_hWnd, WM_LOG_MESSAGE, 0, (LPARAM)pMessage);
-            MessageBox(g_hWnd, L"文件安装成功，但注册表文件修改失败。", L"部分完成", MB_ICONWARNING);
-        }
-    }
-    else {
-        pMessage = new std::wstring(L"安装失败");
-        PostMessage(g_hWnd, WM_LOG_MESSAGE, 0, (LPARAM)pMessage);
-        int result = MessageBox(g_hWnd, L"安装失败。是否要重启系统并尝试重新安装？", L"安装失败", MB_YESNO | MB_ICONQUESTION);
-        if (result == IDYES) {
-            ScheduleRebootAndInstall();
-        }
-    }
-}
-
-//替代代码：
-/*
-void StartInstallation(const std::wstring& installPath) {
-    std::wstring zipPath = EmbeddedResourceManager::ExtractShaderPack();
-    if (zipPath.empty()) {
-        std::wstring* pMessage = new std::wstring(L"提取光影包失败");
-        PostMessage(g_hWnd, WM_LOG_MESSAGE, 0, (LPARAM)pMessage);
-        MessageBox(g_hWnd, L"提取光影包失败", L"错误", MB_ICONERROR);
-        return;
-    }
-    LogOutput(L"设置 zip 文件路径为: " + zipPath);
-
-    std::wstring* pMessage = new std::wstring(L"开始安装...");
-    PostMessage(g_hWnd, WM_LOG_MESSAGE, 0, (LPARAM)pMessage);
-
+    // 1. 先解压光影包文件
     bool success = ExtractZipWith7z(zipPath, installPath);
 
     if (success) {
         pMessage = new std::wstring(L"文件解压完成，安装成功！");
         PostMessage(g_hWnd, WM_LOG_MESSAGE, 0, (LPARAM)pMessage);
+
+        // 2. 解压成功后，创建桌面快捷方式
+        // 从安装路径中提取一个合适的游戏名称用于快捷方式命名
+        std::wstring gameNameForShortcut = L"迷你世界";
+        size_t lastBackslash = installPath.find_last_of(L"\\/");
+        if (lastBackslash != std::wstring::npos && lastBackslash + 1 < installPath.length()) {
+            std::wstring lastDir = installPath.substr(lastBackslash + 1);
+            if (!lastDir.empty()) {
+                gameNameForShortcut += L"_" + lastDir;
+            }
+        }
+        else {
+            gameNameForShortcut += L"_光影版";
+        }
+
+        // 调用快捷方式创建函数
+        if (CreateDesktopShortcut(installPath, gameNameForShortcut)) {
+            std::wstring* successMsg = new std::wstring(L"桌面快捷方式创建成功！");
+            PostMessage(g_hWnd, WM_LOG_MESSAGE, 0, (LPARAM)successMsg);
+        }
+        else {
+            std::wstring* warningMsg = new std::wstring(L"桌面快捷方式创建失败，但文件安装成功。");
+            PostMessage(g_hWnd, WM_LOG_MESSAGE, 0, (LPARAM)warningMsg);
+        }
+
         MessageBox(g_hWnd, L"安装完成！", L"完成", MB_ICONINFORMATION);
     }
     else {
@@ -2780,8 +3000,6 @@ void StartInstallation(const std::wstring& installPath) {
         }
     }
 }
-*/
-
 
 // 安排重启并安装
 void ScheduleRebootAndInstall() {
@@ -2836,7 +3054,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         }
     }
 
-    // <CHANGE> 初始化资源管理器并提取必要文件
+    // 初始化资源管理器并提取必要文件
     if (!EmbeddedResourceManager::Initialize()) {
         MessageBox(NULL, L"初始化资源管理器失败", L"错误", MB_ICONERROR);
         return 1;
@@ -2896,8 +3114,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     // 设置窗口位置
     SetWindowPos(g_hWnd, NULL, g_windowStartX, g_windowY, g_windowWidth, g_windowHeight, SWP_NOZORDER);
-
-
 
     // 启动窗口动画
     SetTimer(g_hWnd, g_animationTimerId, 16, NULL); // 约60fps
