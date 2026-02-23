@@ -3,7 +3,7 @@
 ![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows-green.svg)
 
-嘿！欢迎来到迷你世界reshade安装工具的开源项目！本项目由一名初三学生开发，采用win32API构建UI，我们开始吧！╰(*°▽°*)╯
+嘿！欢迎来到迷你世界reshade安装工具的开源项目！本项目采用win32API构建UI，我们开始吧！╰(*°▽°*)╯
 
 ## 前言
 **迷你世界光影包安装器** 是一个为《迷你世界》游戏设计的辅助工具，旨在帮助玩家轻松安装和管理光影包。通过本工具，用户可以快速检测游戏版本、下载预设光影包，并完成安装过程。
